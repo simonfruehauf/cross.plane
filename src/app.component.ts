@@ -130,7 +130,7 @@ export class AppComponent implements AfterViewInit, OnInit {
 
     // Grid constants
     readonly CELL_SIZE = 40;
-    readonly COOLDOWN_MS = 15000;
+    readonly COOLDOWN_MS = 5000;
 
     // Logic State
     pendingWordCoords = signal<{ x: number, y: number, char: string }[]>([]);

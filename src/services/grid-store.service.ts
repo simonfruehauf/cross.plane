@@ -1,4 +1,4 @@
-import { Injectable, signal, inject, effect } from '@angular/core';
+import { Injectable, signal, effect, inject, computed, untracked } from '@angular/core';
 import { FirebaseService } from './firebase.service';
 
 export interface Cell {
@@ -78,11 +78,62 @@ export class GridStoreService {
       }
     });
 
-    // Persist wordsPlacedCount to cookie
+    // Persist wordsPlacedCount to cookie AND Firebase
     effect(() => {
       const count = this.wordsPlacedCount();
       this.setCookie('cross_plane_words_placed', count.toString(), 365);
+
+      // Use untracked() so this effect ONLY runs when 'count' changes, NOT when 'user' changes.
+      // This prevents overwriting Cloud data immediately upon login with a local '0'.
+      const user = untracked(() => this.firebase.currentUser());
+      if (user) {
+        this.firebase.saveUserData(user.uid, { wordsPlacedCount: count });
+      }
     });
+
+    // Sync on Login: Take max(local, cloud)
+    effect(() => {
+      const user = this.firebase.currentUser();
+      if (user) {
+        this.syncUserStats(user.uid);
+      } else {
+        // Do nothing on null. We expect explicit logout to handle reset.
+        // This prevents "reload page" from wiping cookies if auth takes a second to load.
+      }
+    });
+  }
+
+  private async syncUserStats(userId: string) {
+    if (this.skipNextSync) return;
+
+    try {
+      const data = await this.firebase.getUserData(userId);
+      const localCount = this.wordsPlacedCount();
+
+      if (data && typeof data['wordsPlacedCount'] === 'number') {
+        const cloudCount = data['wordsPlacedCount'];
+
+        if (cloudCount > localCount) {
+          // Cloud wind, update local
+          this.wordsPlacedCount.set(cloudCount);
+        } else if (localCount > cloudCount) {
+          // Local wins, update cloud
+          this.firebase.saveUserData(userId, { wordsPlacedCount: localCount });
+        }
+      } else {
+        // No cloud data, upload local
+        if (localCount > 0) {
+          this.firebase.saveUserData(userId, { wordsPlacedCount: localCount });
+        }
+      }
+    } catch (err) {
+      console.error("Error syncing user stats", err);
+    }
+  }
+
+  resetUserStats() {
+    this.wordsPlacedCount.set(0);
+    this.setCookie('cross_plane_words_placed', '0', 365);
   }
 
   public setCookie(name: string, value: string, days: number) {
@@ -110,7 +161,7 @@ export class GridStoreService {
     // Only update if there are actual changes
     const newMap = new Map<string, Cell>();
     cells.forEach(cell => {
-      const key = `${cell.x},${cell.y}`;
+      const key = `${cell.x},${cell.y} `;
       newMap.set(key, cell);
     });
 
@@ -140,7 +191,7 @@ export class GridStoreService {
 
       if (savedCells.length > 0) {
         savedCells.forEach(cell => {
-          const key = `${cell.x},${cell.y}`;
+          const key = `${cell.x},${cell.y} `;
           this.cellsMap.set(key, cell);
         });
         this.cells.set(new Map(this.cellsMap));
@@ -149,7 +200,7 @@ export class GridStoreService {
         this.initializeDefault();
       }
     } catch (error) {
-      console.error('Failed to load from Firebase:', error);
+      console.error('Failed to load from Firebase - Check Firestore Rules in Console!', error);
       // Fall back to default
       this.initializeDefault();
     } finally {
@@ -177,23 +228,23 @@ export class GridStoreService {
       await this.firebase.saveCells(this.cellsMap);
       console.log('Grid saved to Firebase');
     } catch (error) {
-      console.error('Failed to save to Firebase:', error);
+      console.error('Failed to save to Firebase - Check Firestore Rules in Console!', error);
     }
   }
 
   getCell(x: number, y: number): Cell | undefined {
-    return this.cellsMap.get(`${x},${y}`);
+    return this.cellsMap.get(`${x},${y} `);
   }
 
   setCell(x: number, y: number, char: string, confirmed: boolean) {
-    const key = `${x},${y}`;
+    const key = `${x},${y} `;
     this.cellsMap.set(key, { x, y, char: char.toUpperCase(), confirmed });
     // Trigger signal update by creating a new map reference
     this.cells.set(new Map(this.cellsMap));
   }
 
   removeCell(x: number, y: number) {
-    const key = `${x},${y}`;
+    const key = `${x},${y} `;
     if (this.cellsMap.has(key)) {
       this.cellsMap.delete(key);
       this.cells.set(new Map(this.cellsMap));

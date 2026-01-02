@@ -9,6 +9,16 @@ import {
     onSnapshot,
     Unsubscribe
 } from 'firebase/firestore';
+import {
+    getAuth,
+    signInWithPopup,
+    signOut,
+    GoogleAuthProvider,
+    User,
+    onAuthStateChanged,
+    signInWithEmailAndPassword,
+    createUserWithEmailAndPassword
+} from 'firebase/auth';
 import { Cell } from './grid-store.service';
 
 import { environment } from '../environments/environment';
@@ -18,8 +28,9 @@ const firebaseConfig = environment.firebaseConfig;
 
 @Injectable({ providedIn: 'root' })
 export class FirebaseService {
-    private app: FirebaseApp;
-    private db: Firestore;
+    private app = initializeApp(firebaseConfig);
+    private db = getFirestore(this.app);
+    private auth = getAuth(this.app);
     private unsubscribe: Unsubscribe | null = null;
 
     // Simple session ID (replace with auth later)
@@ -27,10 +38,13 @@ export class FirebaseService {
 
     isSynced = signal(false);
     isLoading = signal(true);
+    currentUser = signal<User | null>(null);
 
     constructor() {
-        this.app = initializeApp(firebaseConfig);
-        this.db = getFirestore(this.app);
+        // Listen to auth state changes
+        onAuthStateChanged(this.auth, (user) => {
+            this.currentUser.set(user);
+        });
     }
 
     // Save all cells to Firestore
@@ -76,5 +90,47 @@ export class FirebaseService {
         if (this.unsubscribe) {
             this.unsubscribe();
         }
+    }
+
+    // --- Authentication ---
+
+    async signInWithGoogle(): Promise<void> {
+        const provider = new GoogleAuthProvider();
+        try {
+            await signInWithPopup(this.auth, provider);
+        } catch (error) {
+            console.error('Error signing in with Google', error);
+            throw error;
+        }
+    }
+
+    async loginEmail(email: string, pass: string): Promise<void> {
+        await signInWithEmailAndPassword(this.auth, email, pass);
+    }
+
+    async registerEmail(email: string, pass: string): Promise<void> {
+        await createUserWithEmailAndPassword(this.auth, email, pass);
+    }
+
+    async signOut(): Promise<void> {
+        try {
+            await signOut(this.auth);
+        } catch (error) {
+            console.error('Error signing out', error);
+            throw error;
+        }
+    }
+
+    // --- User Data ---
+
+    async saveUserData(userId: string, data: any): Promise<void> {
+        const docRef = doc(this.db, 'users', userId);
+        await setDoc(docRef, data, { merge: true });
+    }
+
+    async getUserData(userId: string): Promise<any> {
+        const docRef = doc(this.db, 'users', userId);
+        const snapshot = await getDoc(docRef);
+        return snapshot.exists() ? snapshot.data() : null;
     }
 }

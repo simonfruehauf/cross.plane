@@ -1,11 +1,11 @@
-import { Injectable, signal, computed } from '@angular/core';
+import { Injectable, signal, inject, effect } from '@angular/core';
+import { FirebaseService } from './firebase.service';
 
 export interface Cell {
   x: number;
   y: number;
   char: string; // The letter
   confirmed: boolean; // True if part of a submitted word
-  definition?: string; // Optional tooltip info
 }
 
 @Injectable({
@@ -14,29 +14,132 @@ export interface Cell {
 export class GridStoreService {
   // Key: "x,y"
   private cellsMap = new Map<string, Cell>();
+  private firebase = inject(FirebaseService);
+  private saveTimeout: ReturnType<typeof setTimeout> | null = null;
+  private isInitialized = false;
+  private skipNextSync = false; // Prevent saving when receiving remote changes
 
   // Signals
   readonly cells = signal<Map<string, Cell>>(new Map());
   readonly viewportOffset = signal({ x: 0, y: 0 });
   readonly selectedCell = signal<{ x: number, y: number } | null>(null);
   readonly inputDirection = signal<'across' | 'down'>('across');
+  readonly isLoading = signal(true);
+  readonly lastPlacedTime = signal<number>(0);
 
   constructor() {
-    // Seed the center
-    this.setCell(-2, 0, 'S', true, 'Start here');
-    this.setCell(-1, 0, 'T', true, 'Start here');
-    this.setCell(0, 0, 'A', true, 'Start here');
-    this.setCell(1, 0, 'R', true, 'Start here');
-    this.setCell(2, 0, 'T', true, 'Start here');
+    // Load saved data from Firebase on startup
+    this.loadFromFirebase();
+
+    // Subscribe to real-time updates
+    this.firebase.subscribeToChanges((cells) => {
+      this.handleRemoteUpdate(cells);
+    });
+
+    // Auto-save when cells change (debounced)
+    effect(() => {
+      const cells = this.cells();
+      // Skip if not initialized yet (avoid saving on load)
+      if (!this.isInitialized) return;
+      // Skip if this update came from remote sync
+      if (this.skipNextSync) {
+        this.skipNextSync = false;
+        return;
+      }
+
+      // Clear previous timeout
+      if (this.saveTimeout) {
+        clearTimeout(this.saveTimeout);
+      }
+      // Save after 1 second of no changes
+      this.saveTimeout = setTimeout(() => {
+        this.saveToFirebase();
+      }, 1000);
+    });
+  }
+
+  private handleRemoteUpdate(cells: Cell[]): void {
+    // Only update if there are actual changes
+    const newMap = new Map<string, Cell>();
+    cells.forEach(cell => {
+      const key = `${cell.x},${cell.y}`;
+      newMap.set(key, cell);
+    });
+
+    // Check if there are real differences
+    if (this.cellsMap.size !== newMap.size || !this.mapsEqual(this.cellsMap, newMap)) {
+      this.skipNextSync = true;
+      this.cellsMap = newMap;
+      this.cells.set(new Map(this.cellsMap));
+      console.log('Grid updated from Firebase (real-time sync)');
+    }
+  }
+
+  private mapsEqual(a: Map<string, Cell>, b: Map<string, Cell>): boolean {
+    if (a.size !== b.size) return false;
+    for (const [key, cellA] of a) {
+      const cellB = b.get(key);
+      if (!cellB || cellA.char !== cellB.char || cellA.confirmed !== cellB.confirmed) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  private async loadFromFirebase(): Promise<void> {
+    try {
+      const savedCells = await this.firebase.loadCells();
+
+      if (savedCells.length > 0) {
+        savedCells.forEach(cell => {
+          const key = `${cell.x},${cell.y}`;
+          this.cellsMap.set(key, cell);
+        });
+        this.cells.set(new Map(this.cellsMap));
+      } else {
+        // Initialize with default "START" word
+        this.initializeDefault();
+      }
+    } catch (error) {
+      console.error('Failed to load from Firebase:', error);
+      // Fall back to default
+      this.initializeDefault();
+    } finally {
+      this.isLoading.set(false);
+      this.isInitialized = true;
+    }
+  }
+
+  private initializeDefault(): void {
+    this.setCell(-5, 0, 'C', true);
+    this.setCell(-4, 0, 'R', true);
+    this.setCell(-3, 0, 'O', true);
+    this.setCell(-2, 0, 'S', true);
+    this.setCell(-1, 0, 'S', true);
+    this.setCell(0, 0, '.', true);
+    this.setCell(1, 0, 'P', true);
+    this.setCell(2, 0, 'L', true);
+    this.setCell(3, 0, 'A', true);
+    this.setCell(4, 0, 'N', true);
+    this.setCell(5, 0, 'E', true);
+  }
+
+  private async saveToFirebase(): Promise<void> {
+    try {
+      await this.firebase.saveCells(this.cellsMap);
+      console.log('Grid saved to Firebase');
+    } catch (error) {
+      console.error('Failed to save to Firebase:', error);
+    }
   }
 
   getCell(x: number, y: number): Cell | undefined {
     return this.cellsMap.get(`${x},${y}`);
   }
 
-  setCell(x: number, y: number, char: string, confirmed: boolean, definition?: string) {
+  setCell(x: number, y: number, char: string, confirmed: boolean) {
     const key = `${x},${y}`;
-    this.cellsMap.set(key, { x, y, char: char.toUpperCase(), confirmed, definition });
+    this.cellsMap.set(key, { x, y, char: char.toUpperCase(), confirmed });
     // Trigger signal update by creating a new map reference
     this.cells.set(new Map(this.cellsMap));
   }
@@ -55,34 +158,9 @@ export class GridStoreService {
     if (Math.abs(x) < 6 && Math.abs(y) < 6) return false;
 
     // 2. Procedural "Crossword" Generation
-    // We want a structure that implies "rooms" or "blocks" of words, connected by open paths.
-    // Pure random noise creates "blobs". We want "bars" and "structure".
-
-    // Hash function for pseudo-randomness
     const h = (Math.sin(x * 12.9898 + y * 78.233) * 43758.5453123) % 1;
     const hashVal = Math.abs(h);
 
-    // Grid Structure:
-    // Create a "skeleton" grid every N cells to form rooms.
-    // We use 9 as a stride to give space for words (approx 7-8 letters max before a wall usually).
-    const stride = 9;
-
-    // Check if we are on a grid line
-    const onVerticalGrid = x % stride === 0;
-    const onHorizontalGrid = y % stride === 0;
-
-    // We want the grid to be "broken" so words can pass through.
-    // If on a grid line, be a wall 70% of the time. (30% gaps)
-    if (onVerticalGrid || onHorizontalGrid) {
-      // Use a different hash seed for grid lines to ensure variety
-      const gridHash = Math.abs((Math.sin(x * 93.989 + y * 67.233) * 54758.5453) % 1);
-      return gridHash > 0.35;
-    }
-
-    // Inner Room Noise:
-    // Inside the rooms, we want some random walls to prevent massive open rectangles.
-    // Standard crosswords have ~15-20% black squares.
-    // We already have grid lines. Let's add sparse scatter inside.
     return hashVal > 0.88;
   }
 

@@ -1,4 +1,4 @@
-import { Component, ElementRef, ViewChild, computed, signal, effect, AfterViewInit, HostListener } from '@angular/core';
+import { Component, ElementRef, ViewChild, computed, signal, effect, AfterViewInit, NgZone, inject, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { GridStoreService, Cell } from './services/grid-store.service';
 import { DictionaryService } from './services/dict.service';
@@ -9,11 +9,13 @@ import { DictionaryService } from './services/dict.service';
     imports: [CommonModule],
     templateUrl: './app.component.html'
 })
-export class AppComponent implements AfterViewInit {
+export class AppComponent implements AfterViewInit, OnInit {
     @ViewChild('hiddenInput') hiddenInput!: ElementRef<HTMLInputElement>;
     @ViewChild('gridCanvas') gridCanvas!: ElementRef<HTMLCanvasElement>;
+    @ViewChild('progressPath') progressPath!: ElementRef<SVGPathElement>;
 
     private ctx!: CanvasRenderingContext2D;
+    private ngZone = inject(NgZone);
     private animationFrameId: number | null = null;
     private needsRender = true;
 
@@ -26,7 +28,7 @@ export class AppComponent implements AfterViewInit {
 
     // Zoom State
     zoomLevel = signal(1.0);
-    readonly MIN_ZOOM = 0.05;  // Allow much further zoom out with canvas
+    readonly MIN_ZOOM = 0.03;
     readonly MAX_ZOOM = 2.0;
 
     // Pinch Zoom State
@@ -36,27 +38,27 @@ export class AppComponent implements AfterViewInit {
 
     // Grid constants
     readonly CELL_SIZE = 40;
+    readonly COOLDOWN_MS = 15000;
 
     // Logic State
     pendingWordCoords = signal<{ x: number, y: number, char: string }[]>([]);
     isValidating = signal(false);
     validationMessage = signal('');
     isError = signal(false);
+    cooldownProgress = signal(1.0); // 0 to 1, 1 = ready
 
-    // Track where the current input session started to restrict deletion
+
+    // Track where the current input session started
     entryStart = signal<{ x: number, y: number } | null>(null);
 
-    // Computed signals for rendering
+    // Computed signals
     offsetX = computed(() => this.grid.viewportOffset().x);
     offsetY = computed(() => this.grid.viewportOffset().y);
-
-    // LOD: Only show text when zoomed in enough
     showText = computed(() => this.zoomLevel() > 0.35);
 
     constructor(public grid: GridStoreService, private dictionary: DictionaryService) {
         // Set up effect to trigger re-render when state changes
         effect(() => {
-            // Touch these signals to track them
             this.zoomLevel();
             this.grid.viewportOffset();
             this.grid.cells();
@@ -68,11 +70,37 @@ export class AppComponent implements AfterViewInit {
         });
     }
 
+    ngOnInit() {
+        const params = new URLSearchParams(window.location.search);
+        const xParam = params.get('x');
+        const yParam = params.get('y');
+
+        if (xParam && yParam) {
+            const x = parseInt(xParam, 10);
+            const y = parseInt(yParam, 10);
+
+            if (!isNaN(x) && !isNaN(y)) {
+                // Calculate offset to center grid position (x,y)
+                // ScreenCenterX = GridCenterX + OffsetX + (GridX * CellSize)
+                // We want ScreenCenterX == Width/2, so GridCenterX + OffsetX + (GridX * CellSize) = 0 (relative to center)
+                // Actually: ScreenX = CenterX + OffsetX + GridX * CellSize
+                // CenterX is width/2.
+                // We want ScreenX to be CenterX.
+                // 0 = OffsetX + GridX * CellSize
+                // OffsetX = -(GridX * CellSize)
+
+                const cellSize = this.CELL_SIZE * this.zoomLevel();
+                this.grid.viewportOffset.set({
+                    x: -x * cellSize,
+                    y: -y * cellSize
+                });
+            }
+        }
+    }
+
     ngAfterViewInit() {
         this.setupCanvas();
         this.startRenderLoop();
-
-        // Handle window resize
         window.addEventListener('resize', () => this.resizeCanvas());
     }
 
@@ -100,30 +128,56 @@ export class AppComponent implements AfterViewInit {
     }
 
     private startRenderLoop() {
-        const render = () => {
-            if (this.needsRender) {
-                this.renderCanvas();
-                this.needsRender = false;
-            }
-            this.animationFrameId = requestAnimationFrame(render);
-        };
-        render();
+        this.ngZone.runOutsideAngular(() => {
+            const render = () => {
+                if (this.needsRender) {
+                    this.renderCanvas();
+                    this.needsRender = false;
+                }
+
+                // Update Cooldown Progress directly in DOM to avoid Change Detection cycle
+                const now = Date.now();
+                const lastPlaced = this.grid.lastPlacedTime();
+                const elapsed = now - lastPlaced;
+
+                let progress = 1.0;
+                if (elapsed < this.COOLDOWN_MS) {
+                    progress = elapsed / this.COOLDOWN_MS;
+                }
+
+                // Direct DOM update - High Performance
+                if (this.progressPath?.nativeElement) {
+                    const val = (progress * 100).toFixed(1);
+                    this.progressPath.nativeElement.setAttribute('stroke-dasharray', `${val}, 100`);
+
+                    // Sync signal for other usages (e.g. checkbox) if needed, but throttle it or remove requirement.
+                    // For now, only updating the visual bar.
+                    // If we need the check mark to appear exactly at 100%, we can use a simpler check:
+                    if (progress >= 1.0 && this.cooldownProgress() < 1.0) {
+                        // Re-enter zone to update signal for UI state changes (like showing the checkmark)
+                        this.ngZone.run(() => this.cooldownProgress.set(1.0));
+                    } else if (progress < 1.0) {
+                        // Do not slam the signal 60fps
+                    }
+                }
+
+                this.animationFrameId = requestAnimationFrame(render);
+            };
+            render();
+        });
     }
 
     private renderCanvas() {
         const ctx = this.ctx;
-        const canvas = this.gridCanvas.nativeElement;
         const width = window.innerWidth;
         const height = window.innerHeight;
 
-        // Clear canvas
         ctx.clearRect(0, 0, width, height);
 
         const zoom = this.zoomLevel();
         const offset = this.grid.viewportOffset();
         const cellSize = this.CELL_SIZE * zoom;
 
-        // Calculate visible grid range
         const centerX = width / 2 + offset.x;
         const centerY = height / 2 + offset.y;
 
@@ -177,27 +231,36 @@ export class AppComponent implements AfterViewInit {
             const screenX = centerX + cell.x * cellSize;
             const screenY = centerY + cell.y * cellSize;
 
-            // Check if in view
             if (screenX + cellSize < 0 || screenX > width || screenY + cellSize < 0 || screenY > height) {
                 return;
             }
 
-            // Cell background
             if (showText) {
                 const isSelected = selectedCell && selectedCell.x === cell.x && selectedCell.y === cell.y;
-                ctx.fillStyle = isSelected ? '#dbeafe' : '#ffffff';
+                const isStartWord = cell.y === 0 && Math.abs(cell.x) <= 5 && cell.x !== 0;
+
+                if (isSelected) {
+                    ctx.fillStyle = '#dbeafe'; // Blue-100
+                } else if (isStartWord) {
+                    ctx.fillStyle = '#fef9c3'; // Yellow-100
+                } else {
+                    ctx.fillStyle = '#ffffff';
+                }
+
                 ctx.fillRect(screenX + 1, screenY + 1, cellSize - 2, cellSize - 2);
 
-                // Cell border
-                ctx.strokeStyle = '#d1d5db';
+                if (isStartWord && !isSelected) {
+                    ctx.strokeStyle = '#fde047'; // Yellow-300
+                } else {
+                    ctx.strokeStyle = '#d1d5db'; // Gray-300
+                }
+
                 ctx.lineWidth = 1;
                 ctx.strokeRect(screenX + 1, screenY + 1, cellSize - 2, cellSize - 2);
 
-                // Letter
                 ctx.fillStyle = '#000000';
                 ctx.fillText(cell.char, screenX + cellSize / 2, screenY + cellSize / 2 + 1);
             } else {
-                // Zoomed out: show as solid colored block
                 ctx.fillStyle = '#9ca3af';
                 ctx.fillRect(screenX + 1, screenY + 1, cellSize - 2, cellSize - 2);
             }
@@ -221,7 +284,7 @@ export class AppComponent implements AfterViewInit {
                 ctx.lineWidth = 1;
                 ctx.strokeRect(screenX + 1, screenY + 1, cellSize - 2, cellSize - 2);
 
-                ctx.fillStyle = '#2563eb'; // Blue for pending
+                ctx.fillStyle = '#2563eb';
                 ctx.fillText(p.char, screenX + cellSize / 2, screenY + cellSize / 2 + 1);
             } else {
                 ctx.fillStyle = '#93c5fd';
@@ -238,27 +301,23 @@ export class AppComponent implements AfterViewInit {
             ctx.lineWidth = 3;
             ctx.strokeRect(screenX, screenY, cellSize + 2, cellSize + 2);
 
-            // Glow effect
             ctx.shadowColor = 'rgba(59, 130, 246, 0.5)';
             ctx.shadowBlur = 10;
             ctx.strokeRect(screenX, screenY, cellSize + 2, cellSize + 2);
             ctx.shadowBlur = 0;
 
-            // Draw direction arrow
             const isAcross = this.grid.inputDirection() === 'across';
             const arrowSize = Math.max(12, cellSize * 0.35);
             ctx.fillStyle = '#3b82f6';
             ctx.beginPath();
 
             if (isAcross) {
-                // Arrow pointing right
                 const arrowX = screenX + cellSize + 8;
                 const arrowY = screenY + cellSize / 2;
                 ctx.moveTo(arrowX, arrowY - arrowSize / 2);
                 ctx.lineTo(arrowX + arrowSize, arrowY);
                 ctx.lineTo(arrowX, arrowY + arrowSize / 2);
             } else {
-                // Arrow pointing down
                 const arrowX = screenX + cellSize / 2;
                 const arrowY = screenY + cellSize + 8;
                 ctx.moveTo(arrowX - arrowSize / 2, arrowY);
@@ -276,7 +335,6 @@ export class AppComponent implements AfterViewInit {
 
         const gridPos = this.screenToGrid(e.clientX, e.clientY);
 
-        // Don't select black squares
         if (this.grid.isBlackSquare(gridPos.x, gridPos.y)) {
             return;
         }
@@ -294,7 +352,6 @@ export class AppComponent implements AfterViewInit {
             return;
         }
 
-        // Delay to distinguish from pan
         setTimeout(() => {
             if (!this.isPanning && !this.isPinching) {
                 this.selectCell(gridPos.x, gridPos.y);
@@ -314,32 +371,6 @@ export class AppComponent implements AfterViewInit {
         const gridY = Math.floor((screenY - centerY) / cellSize);
 
         return { x: gridX, y: gridY };
-    }
-
-    // --- Cursor screen position for DOM overlay ---
-
-    getCursorScreenX(): number {
-        const sel = this.grid.selectedCell();
-        if (!sel) return 0;
-
-        const zoom = this.zoomLevel();
-        const offset = this.grid.viewportOffset();
-        const cellSize = this.CELL_SIZE * zoom;
-        const centerX = window.innerWidth / 2 + offset.x;
-
-        return centerX + sel.x * cellSize - 1;
-    }
-
-    getCursorScreenY(): number {
-        const sel = this.grid.selectedCell();
-        if (!sel) return 0;
-
-        const zoom = this.zoomLevel();
-        const offset = this.grid.viewportOffset();
-        const cellSize = this.CELL_SIZE * zoom;
-        const centerY = window.innerHeight / 2 + offset.y;
-
-        return centerY + sel.y * cellSize - 1;
     }
 
     // --- Zoom Controls ---
@@ -643,6 +674,18 @@ export class AppComponent implements AfterViewInit {
             return;
         }
 
+        // Check Cooldown
+        const now = Date.now();
+        const lastTime = this.grid.lastPlacedTime();
+        const timeSince = now - lastTime;
+
+        if (timeSince < this.COOLDOWN_MS) {
+            const remaining = Math.ceil((this.COOLDOWN_MS - timeSince) / 1000);
+            this.showError(`Wait ${remaining}s to place next word.`);
+            this.isValidating.set(false);
+            return;
+        }
+
         const result = await this.dictionary.validateWord(word);
 
         if (result.valid) {
@@ -651,11 +694,12 @@ export class AppComponent implements AfterViewInit {
                 const y = isAcross ? trueStartY : trueStartY + i;
                 const char = word[i];
                 if (!this.grid.getCell(x, y)) {
-                    this.grid.setCell(x, y, char, true, result.definition);
+                    this.grid.setCell(x, y, char, true);
                 }
             }
+            this.grid.lastPlacedTime.set(Date.now());
             this.pendingWordCoords.set([]);
-            this.validationMessage.set(`Placed: ${word}`);
+            this.validationMessage.set(`Placed: "${word}"\n${result.definition}`);
             this.isError.set(false);
         } else {
             this.showError(result.reason || `"${word}" not found.`);
@@ -754,7 +798,23 @@ export class AppComponent implements AfterViewInit {
         this.zoomLevel.set(1.0);
     }
 
-    // Helpers
+    sharePosition() {
+        const center = this.screenToGrid(window.innerWidth / 2, window.innerHeight / 2);
+        const url = new URL(window.location.href);
+        url.searchParams.set('x', center.x.toString());
+        url.searchParams.set('y', center.y.toString());
+
+        navigator.clipboard.writeText(url.toString()).then(() => {
+            this.validationMessage.set('Link copied to clipboard!');
+            this.isError.set(false);
+            setTimeout(() => {
+                if (this.validationMessage() === 'Link copied to clipboard!') {
+                    this.validationMessage.set('');
+                }
+            }, 3000);
+        });
+    }
+
     isCellSelected(x: number, y: number): boolean {
         const s = this.grid.selectedCell();
         return !!s && s.x === x && s.y === y;

@@ -13,10 +13,31 @@
   <div class="absolute top-0 left-0 right-0 p-4 pointer-events-none z-50 flex justify-center md:justify-start">
     <div
       class="bg-white/95 backdrop-blur shadow-lg border border-gray-200 px-4 py-3 rounded-xl pointer-events-auto max-w-sm w-full md:w-auto text-center md:text-left">
-      <h1 class="text-xl font-black tracking-tighter mb-1">Cross.plane</h1>
+      <div class="flex items-center gap-3 mb-1">
+        <!-- Cooldown Indicator -->
+        <div class="relative w-6 h-6 flex-shrink-0">
+          <svg class="transform -rotate-90 w-full h-full" viewBox="0 0 36 36">
+            <!-- Background Circle -->
+            <path class="text-gray-200"
+              d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none"
+              stroke="currentColor" stroke-width="4" />
+            <!-- Progress Circle -->
+            <path #progressPath class="text-blue-500 transition-[stroke-dasharray] duration-100 ease-linear"
+              stroke-dasharray="100, 100"
+              d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none"
+              stroke="currentColor" stroke-width="4" />
+          </svg>
+          @if (cooldownProgress() >= 1) {
+          <div class="absolute inset-0 flex items-center justify-center">
+            <div class="w-2 h-2 bg-blue-500 rounded-full"></div>
+          </div>
+          }
+        </div>
+        <h1 class="text-xl font-black tracking-tighter">Cross.plane</h1>
+      </div>
       <p class="hidden md:block text-xs text-gray-500 mb-2 leading-relaxed">
-        Infinite procedural crossword. <br />
-        Click to select. Rotate. Type.
+        Infinite, procedural, collaborative crossword. <br />
+        Click to select. Space to rotate. Type to type.
       </p>
 
       <!-- Status Box -->
@@ -32,16 +53,10 @@
           <span class="text-sm font-semibold">Validating...</span>
         </div>
         } @else if (validationMessage()) {
-        <div class="text-sm font-medium" [class.text-red-500]="isError()" [class.text-green-600]="!isError()">
+        <div class="text-sm font-medium whitespace-pre-wrap" [class.text-red-500]="isError()"
+          [class.text-green-600]="!isError()">
           {{ validationMessage() }}
         </div>
-        } @else if (grid.selectedCell()) {
-        @let cell = grid.getCell(grid.selectedCell()!.x, grid.selectedCell()!.y);
-        @if (cell && cell.confirmed && cell.definition) {
-        <div class="text-xs text-gray-600 italic border-l-2 border-gray-300 pl-2 text-left">
-          "{{ cell.definition }}"
-        </div>
-        }
         }
       </div>
     </div>
@@ -55,6 +70,15 @@
       <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
           d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15">
+        </path>
+      </svg>
+    </button>
+    <button (click)="sharePosition()"
+      class="bg-white shadow-lg border border-gray-200 p-2 rounded-full hover:bg-gray-50 text-gray-700"
+      title="Share Position">
+      <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+          d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z">
         </path>
       </svg>
     </button>

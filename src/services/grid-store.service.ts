@@ -26,12 +26,19 @@ export class GridStoreService {
   readonly inputDirection = signal<'across' | 'down'>('across');
   readonly isLoading = signal(true);
   readonly lastPlacedTime = signal<number>(0);
+  readonly wordsPlacedCount = signal<number>(0);
 
   constructor() {
     // Initialize lastPlacedTime from cookie
     const savedTime = this.getCookie('cross_plane_last_placed');
     if (savedTime) {
       this.lastPlacedTime.set(parseInt(savedTime, 10));
+    }
+
+    // Initialize wordsPlacedCount from cookie
+    const savedCount = this.getCookie('cross_plane_words_placed');
+    if (savedCount) {
+      this.wordsPlacedCount.set(parseInt(savedCount, 10));
     }
 
     // Load saved data from Firebase on startup
@@ -70,9 +77,15 @@ export class GridStoreService {
         this.setCookie('cross_plane_last_placed', time.toString(), 365);
       }
     });
+
+    // Persist wordsPlacedCount to cookie
+    effect(() => {
+      const count = this.wordsPlacedCount();
+      this.setCookie('cross_plane_words_placed', count.toString(), 365);
+    });
   }
 
-  private setCookie(name: string, value: string, days: number) {
+  public setCookie(name: string, value: string, days: number) {
     let expires = "";
     if (days) {
       const date = new Date();
@@ -82,7 +95,7 @@ export class GridStoreService {
     document.cookie = name + "=" + (value || "") + expires + "; path=/";
   }
 
-  private getCookie(name: string): string | null {
+  public getCookie(name: string): string | null {
     const nameEQ = name + "=";
     const ca = document.cookie.split(';');
     for (let i = 0; i < ca.length; i++) {
@@ -201,5 +214,9 @@ export class GridStoreService {
 
   isValidSlot(x: number, y: number): boolean {
     return !this.isBlackSquare(x, y);
+  }
+
+  incrementWordsPlaced() {
+    this.wordsPlacedCount.update(c => c + 1);
   }
 }

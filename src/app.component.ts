@@ -3,6 +3,98 @@ import { CommonModule } from '@angular/common';
 import { GridStoreService, Cell } from './services/grid-store.service';
 import { DictionaryService } from './services/dict.service';
 
+export interface Theme {
+    id: string;
+    name: string;
+    unlockCount: number; // Words needed to unlock
+    colors: {
+        bg: string;
+        gridLines: string;
+        blackSquare: string;
+        text: string;
+        confirmedBg: string; // cell background
+        confirmedText: string;
+        confirmedBorder: string;
+        startWordBg: string;
+        startWordBorder: string;
+        pendingBg: string;
+        pendingText: string;
+        pendingBorder: string;
+        selectionBg: string;
+        selectionBorder: string;
+        selectionShadow: string;
+    };
+}
+
+export const THEMES: Theme[] = [
+    {
+        id: 'default',
+        name: 'Classic',
+        unlockCount: 0,
+        colors: {
+            bg: '#ffffff',
+            gridLines: 'rgba(0,0,0,0.05)',
+            blackSquare: '#000000',
+            text: '#000000',
+            confirmedBg: '#ffffff',
+            confirmedText: '#000000',
+            confirmedBorder: '#d1d5db',
+            startWordBg: '#fef9c3', // Yellow-100
+            startWordBorder: '#fde047', // Yellow-300
+            pendingBg: '#93c5fd', // Blue-300
+            pendingText: '#2563eb', // Blue-600
+            pendingBorder: '#d1d5db',
+            selectionBg: '#dbeafe', // Blue-100
+            selectionBorder: '#3b82f6', // Blue-500
+            selectionShadow: 'rgba(59, 130, 246, 0.5)'
+        }
+    },
+    {
+        id: 'dark',
+        name: 'Midnight',
+        unlockCount: 10,
+        colors: {
+            bg: '#1f2937',
+            gridLines: 'rgba(255,255,255,0.1)',
+            blackSquare: '#111827',
+            text: '#f3f4f6',
+            confirmedBg: '#1f2937',
+            confirmedText: '#f3f4f6',
+            confirmedBorder: '#374151',
+            startWordBg: '#3f2c06',
+            startWordBorder: '#ca8a04',
+            pendingBg: '#1e3a8a',
+            pendingText: '#60a5fa',
+            pendingBorder: '#374151',
+            selectionBg: '#1e40af',
+            selectionBorder: '#3b82f6',
+            selectionShadow: 'rgba(59, 130, 246, 0.5)'
+        }
+    },
+    {
+        id: 'blueprint',
+        name: 'Blueprint',
+        unlockCount: 20,
+        colors: {
+            bg: '#3555a1',
+            gridLines: 'rgba(255,255,255,0.2)',
+            blackSquare: '#25397bff',
+            text: '#ffffff',
+            confirmedBg: '#3555a1',
+            confirmedText: '#ffffff',
+            confirmedBorder: '#93c5fd',
+            startWordBg: 'rgba(147, 197, 253,0.2)',
+            startWordBorder: 'rgba(147, 197, 253,0.2)',
+            pendingBg: '#2563eb',
+            pendingText: '#ffffff',
+            pendingBorder: '#ffffff',
+            selectionBg: 'rgba(255,255,255,0.1)',
+            selectionBorder: '#ffffff',
+            selectionShadow: 'rgba(255, 255, 255, 0.5)'
+        }
+    }
+];
+
 @Component({
     selector: 'app-root',
     standalone: true,
@@ -47,6 +139,11 @@ export class AppComponent implements AfterViewInit, OnInit {
     isError = signal(false);
     cooldownProgress = signal(1.0); // 0 to 1, 1 = ready
 
+    // Theme State
+    activeTheme = signal<Theme>(THEMES[0]);
+    themes = THEMES;
+    isThemeMenuOpen = signal(false);
+
 
     // Track where the current input session started
     entryStart = signal<{ x: number, y: number } | null>(null);
@@ -65,8 +162,25 @@ export class AppComponent implements AfterViewInit, OnInit {
             this.grid.selectedCell();
             this.grid.inputDirection();
             this.pendingWordCoords();
+            this.activeTheme(); // Trigger render on theme change
 
             this.requestRender();
+        });
+
+        // Initialize activeTheme from cookie
+        const savedThemeId = this.grid.getCookie('cross_plane_theme');
+        if (savedThemeId) {
+            const savedTheme = this.themes.find(t => t.id === savedThemeId);
+            if (savedTheme) {
+                this.activeTheme.set(savedTheme);
+            }
+        }
+
+        // Effect to update body background color to match theme and save to cookie
+        effect(() => {
+            const theme = this.activeTheme();
+            document.body.style.backgroundColor = theme.colors.bg;
+            this.grid.setCookie('cross_plane_theme', theme.id, 365);
         });
     }
 
@@ -172,7 +286,13 @@ export class AppComponent implements AfterViewInit, OnInit {
         const width = window.innerWidth;
         const height = window.innerHeight;
 
+        const theme = this.activeTheme().colors;
+
         ctx.clearRect(0, 0, width, height);
+
+        // Fill background
+        ctx.fillStyle = theme.bg;
+        ctx.fillRect(0, 0, width, height);
 
         const zoom = this.zoomLevel();
         const offset = this.grid.viewportOffset();
@@ -187,7 +307,7 @@ export class AppComponent implements AfterViewInit, OnInit {
         const endGridY = Math.ceil((height - centerY) / cellSize) + 1;
 
         // Draw background grid pattern
-        ctx.strokeStyle = 'rgba(0,0,0,0.05)';
+        ctx.strokeStyle = theme.gridLines;
         ctx.lineWidth = 1;
 
         for (let x = startGridX; x <= endGridX; x++) {
@@ -206,7 +326,7 @@ export class AppComponent implements AfterViewInit, OnInit {
         }
 
         // Draw black squares (walls)
-        ctx.fillStyle = '#000000';
+        ctx.fillStyle = theme.blackSquare;
         for (let x = startGridX; x <= endGridX; x++) {
             for (let y = startGridY; y <= endGridY; y++) {
                 if (this.grid.isBlackSquare(x, y)) {
@@ -240,28 +360,28 @@ export class AppComponent implements AfterViewInit, OnInit {
                 const isStartWord = cell.y === 0 && Math.abs(cell.x) <= 5 && cell.x !== 0;
 
                 if (isSelected) {
-                    ctx.fillStyle = '#dbeafe'; // Blue-100
+                    ctx.fillStyle = theme.selectionBg;
                 } else if (isStartWord) {
-                    ctx.fillStyle = '#fef9c3'; // Yellow-100
+                    ctx.fillStyle = theme.startWordBg;
                 } else {
-                    ctx.fillStyle = '#ffffff';
+                    ctx.fillStyle = theme.confirmedBg;
                 }
 
                 ctx.fillRect(screenX + 1, screenY + 1, cellSize - 2, cellSize - 2);
 
                 if (isStartWord && !isSelected) {
-                    ctx.strokeStyle = '#fde047'; // Yellow-300
+                    ctx.strokeStyle = theme.startWordBorder;
                 } else {
-                    ctx.strokeStyle = '#d1d5db'; // Gray-300
+                    ctx.strokeStyle = theme.confirmedBorder;
                 }
 
                 ctx.lineWidth = 1;
                 ctx.strokeRect(screenX + 1, screenY + 1, cellSize - 2, cellSize - 2);
 
-                ctx.fillStyle = '#000000';
+                ctx.fillStyle = theme.confirmedText;
                 ctx.fillText(cell.char, screenX + cellSize / 2, screenY + cellSize / 2 + 1);
             } else {
-                ctx.fillStyle = '#9ca3af';
+                ctx.fillStyle = theme.confirmedBorder; // Placeholder color when zoomed out
                 ctx.fillRect(screenX + 1, screenY + 1, cellSize - 2, cellSize - 2);
             }
         });
@@ -277,17 +397,17 @@ export class AppComponent implements AfterViewInit, OnInit {
 
             if (showText) {
                 const isSelected = selectedCell && selectedCell.x === p.x && selectedCell.y === p.y;
-                ctx.fillStyle = isSelected ? '#dbeafe' : '#ffffff';
+                ctx.fillStyle = isSelected ? theme.selectionBg : theme.confirmedBg;
                 ctx.fillRect(screenX + 1, screenY + 1, cellSize - 2, cellSize - 2);
 
-                ctx.strokeStyle = '#d1d5db';
+                ctx.strokeStyle = theme.pendingBorder;
                 ctx.lineWidth = 1;
                 ctx.strokeRect(screenX + 1, screenY + 1, cellSize - 2, cellSize - 2);
 
-                ctx.fillStyle = '#2563eb';
+                ctx.fillStyle = theme.pendingText;
                 ctx.fillText(p.char, screenX + cellSize / 2, screenY + cellSize / 2 + 1);
             } else {
-                ctx.fillStyle = '#93c5fd';
+                ctx.fillStyle = theme.pendingBg;
                 ctx.fillRect(screenX + 1, screenY + 1, cellSize - 2, cellSize - 2);
             }
         });
@@ -297,18 +417,18 @@ export class AppComponent implements AfterViewInit, OnInit {
             const screenX = centerX + selectedCell.x * cellSize - 1;
             const screenY = centerY + selectedCell.y * cellSize - 1;
 
-            ctx.strokeStyle = '#3b82f6';
+            ctx.strokeStyle = theme.selectionBorder;
             ctx.lineWidth = 3;
             ctx.strokeRect(screenX, screenY, cellSize + 2, cellSize + 2);
 
-            ctx.shadowColor = 'rgba(59, 130, 246, 0.5)';
+            ctx.shadowColor = theme.selectionShadow;
             ctx.shadowBlur = 10;
             ctx.strokeRect(screenX, screenY, cellSize + 2, cellSize + 2);
             ctx.shadowBlur = 0;
 
             const isAcross = this.grid.inputDirection() === 'across';
             const arrowSize = Math.max(12, cellSize * 0.35);
-            ctx.fillStyle = '#3b82f6';
+            ctx.fillStyle = theme.selectionBorder;
             ctx.beginPath();
 
             if (isAcross) {
@@ -420,6 +540,20 @@ export class AppComponent implements AfterViewInit, OnInit {
 
         const targetZoom = this.zoomLevel() * factor;
         this.setZoom(targetZoom, e.clientX, e.clientY);
+    }
+
+    toggleThemeMenu() {
+        this.isThemeMenuOpen.update(v => !v);
+    }
+
+    selectTheme(theme: Theme) {
+        if (this.grid.wordsPlacedCount() >= theme.unlockCount) {
+            this.activeTheme.set(theme);
+            this.isThemeMenuOpen.set(false); // Close menu on selection
+        } else {
+            // Shake or show error? For now just ignore or show toast
+            this.showError(`Need ${theme.unlockCount} words to unlock ${theme.name}!`);
+        }
     }
 
     // --- Input & Interaction ---
@@ -725,6 +859,7 @@ export class AppComponent implements AfterViewInit, OnInit {
                 }
             }
             this.grid.lastPlacedTime.set(Date.now());
+            this.grid.incrementWordsPlaced(); // Increment counter
             this.pendingWordCoords.set([]);
             this.validationMessage.set(`Placed: "${word}"\n${result.definition}`);
             this.isError.set(false);

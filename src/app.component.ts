@@ -374,12 +374,37 @@ export class AppComponent implements AfterViewInit, OnInit {
     }
 
     // --- Zoom Controls ---
+
+    private setZoom(newZoom: number, centerX: number, centerY: number) {
+        const currentZoom = this.zoomLevel();
+        const oldOffset = this.grid.viewportOffset();
+
+        const clampedZoom = Math.min(Math.max(newZoom, this.MIN_ZOOM), this.MAX_ZOOM);
+
+        if (clampedZoom === currentZoom) return;
+
+        // Formula: nextOffset = relativeMouse - (relativeMouse - currentOffset) * (nextZoom / currentZoom)
+        const width = window.innerWidth;
+        const height = window.innerHeight;
+
+        const relX = centerX - width / 2;
+        const relY = centerY - height / 2;
+
+        const ratio = clampedZoom / currentZoom;
+
+        const newOffsetX = relX - (relX - oldOffset.x) * ratio;
+        const newOffsetY = relY - (relY - oldOffset.y) * ratio;
+
+        this.grid.viewportOffset.set({ x: newOffsetX, y: newOffsetY });
+        this.zoomLevel.set(clampedZoom);
+    }
+
     zoomIn() {
-        this.zoomLevel.update(z => Math.min(z * 1.2, this.MAX_ZOOM));
+        this.setZoom(this.zoomLevel() * 1.2, window.innerWidth / 2, window.innerHeight / 2);
     }
 
     zoomOut() {
-        this.zoomLevel.update(z => Math.max(z / 1.2, this.MIN_ZOOM));
+        this.setZoom(this.zoomLevel() / 1.2, window.innerWidth / 2, window.innerHeight / 2);
     }
 
     onWheel(e: WheelEvent) {
@@ -389,10 +414,12 @@ export class AppComponent implements AfterViewInit, OnInit {
         const delta = -e.deltaY;
 
         let factor = 1 + (delta * zoomSpeed);
+        // Cap speed
         if (factor > 1.15) factor = 1.15;
         if (factor < 0.85) factor = 0.85;
 
-        this.zoomLevel.update(z => Math.min(Math.max(z * factor, this.MIN_ZOOM), this.MAX_ZOOM));
+        const targetZoom = this.zoomLevel() * factor;
+        this.setZoom(targetZoom, e.clientX, e.clientY);
     }
 
     // --- Input & Interaction ---
@@ -765,8 +792,17 @@ export class AppComponent implements AfterViewInit, OnInit {
         if (this.isPinching && e.touches.length === 2) {
             const dist = this.getDist(e.touches);
             const scale = dist / this.initialPinchDist;
-            const newZoom = Math.min(Math.max(this.startZoom * scale, this.MIN_ZOOM), this.MAX_ZOOM);
-            this.zoomLevel.set(newZoom);
+
+            // Calculate center of pinch
+            const cx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+            const cy = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+
+            // Target zoom based on start zoom of this gesture
+            const targetZoom = this.startZoom * scale;
+
+            // We use setZoom to handle offset updates correctly to zoom INTO the pinch center
+            this.setZoom(targetZoom, cx, cy);
+
             e.preventDefault();
             return;
         }

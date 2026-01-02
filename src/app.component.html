@@ -13,7 +13,8 @@
   <app-top-bar [lastPlacedTime]="grid.lastPlacedTime()" [cooldownMs]="COOLDOWN_MS"
     [wordsPlacedCount]="grid.wordsPlacedCount()" [isValidating]="isValidating()"
     [validationMessage]="validationMessage()" [isError]="isError()" [activeTheme]="activeTheme()" [themes]="themes"
-    (themeSelected)="activeTheme.set($event)" (zoomIn)="zoomIn()" (zoomOut)="zoomOut()" (resetView)="resetView()"
+    [activeFont]="activeFont()" [fonts]="fonts" (themeSelected)="activeTheme.set($event)"
+    (fontSelected)="activeFont.set($event)" (zoomIn)="zoomIn()" (zoomOut)="zoomOut()" (resetView)="resetView()"
     (sharePosition)="sharePosition()">
   </app-top-bar>
 

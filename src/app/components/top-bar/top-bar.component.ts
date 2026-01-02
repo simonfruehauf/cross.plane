@@ -1,6 +1,6 @@
 import { Component, EventEmitter, Input, Output, signal, ElementRef, ViewChild, NgZone, AfterViewInit, OnDestroy, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { Theme } from '../../../app.component';
+import { Theme, Font } from '../../../app.component';
 import { FirebaseService } from '../../../services/firebase.service';
 import { GridStoreService } from '../../../services/grid-store.service';
 
@@ -176,21 +176,47 @@ import { GridStoreService } from '../../../services/grid-store.service';
         </button>
   
         <div *ngIf="isThemeMenuOpen"
-          class="absolute right-full top-0 mr-2 bg-white/95 backdrop-blur shadow-lg border border-gray-200 p-2 rounded-xl flex gap-2 animate-in fade-in slide-in-from-right-2">
-          <button *ngFor="let t of themes" (click)="selectTheme(t)"
-            class="w-8 h-8 rounded-full border transition-all relative flex items-center justify-center group"
-            [class.ring-2]="activeTheme.id === t.id" [class.ring-offset-1]="activeTheme.id === t.id"
-            [class.ring-blue-500]="activeTheme.id === t.id" [class.opacity-50]="wordsPlacedCount < t.unlockCount"
-            [style.background-color]="t.buttonColor" [style.border-color]="t.colors.confirmedBorder"
-            [title]="wordsPlacedCount < t.unlockCount ? 'Unlock at ' + t.unlockCount + ' words' : t.name">
-  
-            <svg *ngIf="wordsPlacedCount < t.unlockCount" class="w-4 h-4 text-gray-400" fill="none"
-              stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z">
-              </path>
-            </svg>
-          </button>
+          class="absolute right-full top-0 mr-2 bg-white/95 backdrop-blur shadow-lg border border-gray-200 p-3 rounded-xl flex flex-col gap-3 min-w-max animate-in fade-in slide-in-from-right-2">
+          
+          <!-- Themes -->
+          <div class="flex gap-2">
+            <button *ngFor="let t of themes" (click)="selectTheme(t)"
+              class="w-10 h-10 rounded-full border transition-all relative flex items-center justify-center group shadow-sm"
+              [class.ring-2]="activeTheme.id === t.id" [class.ring-offset-1]="activeTheme.id === t.id"
+              [class.ring-blue-500]="activeTheme.id === t.id" [class.opacity-50]="wordsPlacedCount < t.unlockCount"
+              [style.background-color]="t.buttonColor" [style.border-color]="t.colors.confirmedBorder"
+              [title]="wordsPlacedCount < t.unlockCount ? 'Unlock at ' + t.unlockCount + ' words' : t.name">
+    
+              <svg *ngIf="wordsPlacedCount < t.unlockCount" class="w-4 h-4 text-gray-400" fill="none"
+                stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z">
+                </path>
+              </svg>
+            </button>
+          </div>
+
+          <!-- Divider -->
+          <div class="h-px bg-gray-200 w-full"></div>
+
+          <!-- Fonts -->
+          <div class="flex gap-2">
+             <button *ngFor="let f of fonts" (click)="selectFont(f)"
+              class="w-10 h-10 rounded-lg border transition-all relative flex items-center justify-center group shadow-sm bg-white hover:bg-gray-50"
+              [class.ring-2]="activeFont.id === f.id" [class.ring-offset-1]="activeFont.id === f.id"
+              [class.ring-blue-500]="activeFont.id === f.id" [class.opacity-50]="wordsPlacedCount < f.unlockCount"
+              [title]="wordsPlacedCount < f.unlockCount ? 'Unlock at ' + f.unlockCount + ' words' : f.name">
+              
+              <span *ngIf="wordsPlacedCount >= f.unlockCount" [style.font-family]="f.fontFamily" class="text-lg">Ag</span>
+
+              <svg *ngIf="wordsPlacedCount < f.unlockCount" class="w-4 h-4 text-gray-400" fill="none"
+                stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z">
+                </path>
+              </svg>
+            </button>
+          </div>
         </div>
       </div>
   
@@ -219,8 +245,11 @@ export class TopBarComponent implements AfterViewInit, OnDestroy {
   @Input() isError: boolean = false;
   @Input() activeTheme!: Theme;
   @Input() themes: Theme[] = [];
+  @Input() activeFont!: Font;
+  @Input() fonts: Font[] = [];
 
   @Output() themeSelected = new EventEmitter<Theme>();
+  @Output() fontSelected = new EventEmitter<Font>();
   @Output() zoomIn = new EventEmitter<void>();
   @Output() zoomOut = new EventEmitter<void>();
   @Output() resetView = new EventEmitter<void>();
@@ -343,7 +372,13 @@ export class TopBarComponent implements AfterViewInit, OnDestroy {
   selectTheme(theme: Theme) {
     if (this.wordsPlacedCount >= theme.unlockCount) {
       this.themeSelected.emit(theme);
-      this.isThemeMenuOpen = false;
+      // Don't close menu immediately so they can pick font too
+    }
+  }
+
+  selectFont(font: Font) {
+    if (this.wordsPlacedCount >= font.unlockCount) {
+      this.fontSelected.emit(font);
     }
   }
 }

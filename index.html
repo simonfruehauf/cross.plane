@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -10,22 +11,27 @@
     .no-scrollbar::-webkit-scrollbar {
       display: none;
     }
+
     .no-scrollbar {
       -ms-overflow-style: none;
       scrollbar-width: none;
     }
+
     body {
-      overflow: hidden; /* Prevent native scroll, we handle panning */
-      touch-action: none; /* Prevent browser zoom/scroll gestures */
+      overflow: hidden;
+      /* Prevent native scroll, we handle panning */
+      touch-action: none;
+      /* Prevent browser zoom/scroll gestures */
     }
+
     .grid-pattern {
-      background-image: 
+      background-image:
         linear-gradient(to right, #e5e7eb 1px, transparent 1px),
         linear-gradient(to bottom, #e5e7eb 1px, transparent 1px);
       background-size: 40px 40px;
     }
   </style>
-<script type="importmap">
+  <script type="importmap">
 {
   "imports": {
     "rxjs": "https://esm.sh/rxjs@^7.8.2?conditions=es2015",
@@ -43,9 +49,16 @@
   }
 }
 </script>
-<link rel="stylesheet" href="/index.css">
+  <link rel="stylesheet" href="/index.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Patrick+Hand&family=Pixelify+Sans:wght@400..700&family=UnifrakturMaguntia&family=Roboto+Mono:wght@400..700&display=swap"
+    rel="stylesheet">
 </head>
+
 <body class="bg-gray-50 text-gray-900 font-sans h-screen w-screen overflow-hidden">
   <app-root></app-root>
 </body>
+
 </html>

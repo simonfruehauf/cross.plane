@@ -146,6 +146,46 @@ export const THEMES: Theme[] = [
     }
 ];
 
+export interface Font {
+    id: string;
+    name: string;
+    fontFamily: string;
+    unlockCount: number;
+}
+
+export const FONTS: Font[] = [
+    {
+        id: 'classic',
+        name: 'Classic',
+        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+        unlockCount: 0
+    },
+    {
+        id: 'hand',
+        name: 'Hand',
+        fontFamily: '"Patrick Hand", cursive',
+        unlockCount: 20
+    },
+    {
+        id: 'robot',
+        name: 'Roboto',
+        fontFamily: '"Roboto Mono", monospace',
+        unlockCount: 25
+    },
+    {
+        id: 'pixel',
+        name: 'Pixel',
+        fontFamily: '"Pixelify Sans", monospace',
+        unlockCount: 40
+    },
+    {
+        id: 'gothic',
+        name: 'Gothic',
+        fontFamily: '"UnifrakturMaguntia", cursive',
+        unlockCount: 100
+    }
+];
+
 @Component({
     selector: 'app-root',
     standalone: true,
@@ -188,9 +228,12 @@ export class AppComponent implements AfterViewInit, OnInit {
     validationMessage = signal('');
     isError = signal(false);
 
-    // Theme State
+    // Theme & Font State
     activeTheme = signal<Theme>(THEMES[0]);
     themes = THEMES;
+
+    activeFont = signal<Font>(FONTS[0]);
+    fonts = FONTS;
 
 
     // Track where the current input session started
@@ -210,7 +253,10 @@ export class AppComponent implements AfterViewInit, OnInit {
             this.grid.selectedCell();
             this.grid.inputDirection();
             this.pendingWordCoords();
+            this.grid.inputDirection();
+            this.pendingWordCoords();
             this.activeTheme(); // Trigger render on theme change
+            this.activeFont(); // Trigger render on font change
 
             this.requestRender();
         });
@@ -224,11 +270,26 @@ export class AppComponent implements AfterViewInit, OnInit {
             }
         }
 
+        // Initialize activeFont from cookie
+        const savedFontId = this.grid.getCookie('cross_plane_font');
+        if (savedFontId) {
+            const savedFont = this.fonts.find(f => f.id === savedFontId);
+            if (savedFont) {
+                this.activeFont.set(savedFont);
+            }
+        }
+
         // Effect to update body background color to match theme and save to cookie
         effect(() => {
             const theme = this.activeTheme();
             document.body.style.backgroundColor = theme.colors.bg;
             this.grid.setCookie('cross_plane_theme', theme.id, 365);
+        });
+
+        // Effect to save font preference
+        effect(() => {
+            const font = this.activeFont();
+            this.grid.setCookie('cross_plane_font', font.id, 365);
         });
     }
 
@@ -363,7 +424,7 @@ export class AppComponent implements AfterViewInit, OnInit {
         const selectedCell = this.grid.selectedCell();
         const fontSize = Math.max(8, Math.floor(cellSize * 0.55));
 
-        ctx.font = `bold ${fontSize}px ui-monospace, monospace`;
+        ctx.font = `bold ${fontSize}px ${this.activeFont().fontFamily}`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
 

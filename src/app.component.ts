@@ -2,6 +2,7 @@ import { Component, ElementRef, ViewChild, computed, signal, effect, AfterViewIn
 import { CommonModule } from '@angular/common';
 import { GridStoreService, Cell } from './services/grid-store.service';
 import { DictionaryService } from './services/dict.service';
+import { TopBarComponent } from './app/components/top-bar/top-bar.component';
 
 export interface Theme {
     id: string;
@@ -98,13 +99,12 @@ export const THEMES: Theme[] = [
 @Component({
     selector: 'app-root',
     standalone: true,
-    imports: [CommonModule],
+    imports: [CommonModule, TopBarComponent],
     templateUrl: './app.component.html'
 })
 export class AppComponent implements AfterViewInit, OnInit {
     @ViewChild('hiddenInput') hiddenInput!: ElementRef<HTMLInputElement>;
     @ViewChild('gridCanvas') gridCanvas!: ElementRef<HTMLCanvasElement>;
-    @ViewChild('progressPath') progressPath!: ElementRef<SVGPathElement>;
 
     private ctx!: CanvasRenderingContext2D;
     private ngZone = inject(NgZone);
@@ -137,12 +137,10 @@ export class AppComponent implements AfterViewInit, OnInit {
     isValidating = signal(false);
     validationMessage = signal('');
     isError = signal(false);
-    cooldownProgress = signal(1.0); // 0 to 1, 1 = ready
 
     // Theme State
     activeTheme = signal<Theme>(THEMES[0]);
     themes = THEMES;
-    isThemeMenuOpen = signal(false);
 
 
     // Track where the current input session started
@@ -248,33 +246,6 @@ export class AppComponent implements AfterViewInit, OnInit {
                     this.renderCanvas();
                     this.needsRender = false;
                 }
-
-                // Update Cooldown Progress directly in DOM to avoid Change Detection cycle
-                const now = Date.now();
-                const lastPlaced = this.grid.lastPlacedTime();
-                const elapsed = now - lastPlaced;
-
-                let progress = 1.0;
-                if (elapsed < this.COOLDOWN_MS) {
-                    progress = elapsed / this.COOLDOWN_MS;
-                }
-
-                // Direct DOM update - High Performance
-                if (this.progressPath?.nativeElement) {
-                    const val = (progress * 100).toFixed(1);
-                    this.progressPath.nativeElement.setAttribute('stroke-dasharray', `${val}, 100`);
-
-                    // Sync signal for other usages (e.g. checkbox) if needed, but throttle it or remove requirement.
-                    // For now, only updating the visual bar.
-                    // If we need the check mark to appear exactly at 100%, we can use a simpler check:
-                    if (progress >= 1.0 && this.cooldownProgress() < 1.0) {
-                        // Re-enter zone to update signal for UI state changes (like showing the checkmark)
-                        this.ngZone.run(() => this.cooldownProgress.set(1.0));
-                    } else if (progress < 1.0) {
-                        // Do not slam the signal 60fps
-                    }
-                }
-
                 this.animationFrameId = requestAnimationFrame(render);
             };
             render();
@@ -347,44 +318,37 @@ export class AppComponent implements AfterViewInit, OnInit {
         ctx.textBaseline = 'middle';
 
         // Draw confirmed cells
-        this.grid.cells().forEach(cell => {
-            const screenX = centerX + cell.x * cellSize;
-            const screenY = centerY + cell.y * cellSize;
+        // Hybrid Render:
+        // If the viewport area is smaller than the total number of cells, iterate the viewport (spatial lookup).
+        // This makes rendering O(Viewport) which is constant time relative to grid size.
+        // If zoomed out or sparse, iterate the map to avoid checking millions of empty cells.
+        const viewportW = endGridX - startGridX;
+        const viewportH = endGridY - startGridY;
+        const viewportArea = viewportW * viewportH;
+        const totalCells = this.grid.cells().size;
 
-            if (screenX + cellSize < 0 || screenX > width || screenY + cellSize < 0 || screenY > height) {
-                return;
-            }
+        // Threshold: If viewport has fewer slots than total cells (times a constant factor for overhead), scan viewport.
+        // Otherwise scan all cells and filter.
+        const useViewportScan = viewportArea < (totalCells * 2);
 
-            if (showText) {
-                const isSelected = selectedCell && selectedCell.x === cell.x && selectedCell.y === cell.y;
-                const isStartWord = cell.y === 0 && Math.abs(cell.x) <= 5 && cell.x !== 0;
-
-                if (isSelected) {
-                    ctx.fillStyle = theme.selectionBg;
-                } else if (isStartWord) {
-                    ctx.fillStyle = theme.startWordBg;
-                } else {
-                    ctx.fillStyle = theme.confirmedBg;
+        if (useViewportScan) {
+            for (let x = startGridX; x <= endGridX; x++) {
+                for (let y = startGridY; y <= endGridY; y++) {
+                    const cell = this.grid.getCell(x, y);
+                    if (cell) {
+                        this.drawCell(ctx, cell, centerX, centerY, cellSize, theme, showText, selectedCell);
+                    }
                 }
-
-                ctx.fillRect(screenX + 1, screenY + 1, cellSize - 2, cellSize - 2);
-
-                if (isStartWord && !isSelected) {
-                    ctx.strokeStyle = theme.startWordBorder;
-                } else {
-                    ctx.strokeStyle = theme.confirmedBorder;
-                }
-
-                ctx.lineWidth = 1;
-                ctx.strokeRect(screenX + 1, screenY + 1, cellSize - 2, cellSize - 2);
-
-                ctx.fillStyle = theme.confirmedText;
-                ctx.fillText(cell.char, screenX + cellSize / 2, screenY + cellSize / 2 + 1);
-            } else {
-                ctx.fillStyle = theme.confirmedBorder; // Placeholder color when zoomed out
-                ctx.fillRect(screenX + 1, screenY + 1, cellSize - 2, cellSize - 2);
             }
-        });
+        } else {
+            this.grid.cells().forEach(cell => {
+                // Optimization: Check bounds first
+                if (cell.x < startGridX || cell.x > endGridX || cell.y < startGridY || cell.y > endGridY) {
+                    return;
+                }
+                this.drawCell(ctx, cell, centerX, centerY, cellSize, theme, showText, selectedCell);
+            });
+        }
 
         // Draw pending cells
         this.pendingWordCoords().forEach(p => {
@@ -540,20 +504,6 @@ export class AppComponent implements AfterViewInit, OnInit {
 
         const targetZoom = this.zoomLevel() * factor;
         this.setZoom(targetZoom, e.clientX, e.clientY);
-    }
-
-    toggleThemeMenu() {
-        this.isThemeMenuOpen.update(v => !v);
-    }
-
-    selectTheme(theme: Theme) {
-        if (this.grid.wordsPlacedCount() >= theme.unlockCount) {
-            this.activeTheme.set(theme);
-            this.isThemeMenuOpen.set(false); // Close menu on selection
-        } else {
-            // Shake or show error? For now just ignore or show toast
-            this.showError(`Need ${theme.unlockCount} words to unlock ${theme.name}!`);
-        }
     }
 
     // --- Input & Interaction ---
@@ -989,5 +939,56 @@ export class AppComponent implements AfterViewInit, OnInit {
     isCellSelected(x: number, y: number): boolean {
         const s = this.grid.selectedCell();
         return !!s && s.x === x && s.y === y;
+    }
+
+    private drawCell(
+        ctx: CanvasRenderingContext2D,
+        cell: Cell,
+        centerX: number,
+        centerY: number,
+        cellSize: number,
+        theme: any,
+        showText: boolean,
+        selectedCell: { x: number, y: number } | null
+    ) {
+        const screenX = centerX + cell.x * cellSize;
+        const screenY = centerY + cell.y * cellSize;
+        const width = ctx.canvas.width / window.devicePixelRatio; // Approximate width checks if needed, but we already filtered in loop
+        const height = ctx.canvas.height / window.devicePixelRatio;
+
+        // Double check bounds if useful, though loops handle it mostly.
+        if (screenX + cellSize < 0 || screenX > width || screenY + cellSize < 0 || screenY > height) {
+            return;
+        }
+
+        if (showText) {
+            const isSelected = selectedCell && selectedCell.x === cell.x && selectedCell.y === cell.y;
+            const isStartWord = cell.y === 0 && Math.abs(cell.x) <= 5 && cell.x !== 0;
+
+            if (isSelected) {
+                ctx.fillStyle = theme.selectionBg;
+            } else if (isStartWord) {
+                ctx.fillStyle = theme.startWordBg;
+            } else {
+                ctx.fillStyle = theme.confirmedBg;
+            }
+
+            ctx.fillRect(screenX + 1, screenY + 1, cellSize - 2, cellSize - 2);
+
+            if (isStartWord && !isSelected) {
+                ctx.strokeStyle = theme.startWordBorder;
+            } else {
+                ctx.strokeStyle = theme.confirmedBorder;
+            }
+
+            ctx.lineWidth = 1;
+            ctx.strokeRect(screenX + 1, screenY + 1, cellSize - 2, cellSize - 2);
+
+            ctx.fillStyle = theme.confirmedText;
+            ctx.fillText(cell.char, screenX + cellSize / 2, screenY + cellSize / 2 + 1);
+        } else {
+            ctx.fillStyle = theme.confirmedBorder; // Placeholder color when zoomed out
+            ctx.fillRect(screenX + 1, screenY + 1, cellSize - 2, cellSize - 2);
+        }
     }
 }

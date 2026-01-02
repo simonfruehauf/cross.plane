@@ -8,6 +8,7 @@ export interface Theme {
     id: string;
     name: string;
     unlockCount: number; // Words needed to unlock
+    buttonColor: string; // Color used for the UI button
     colors: {
         bg: string;
         gridLines: string;
@@ -32,6 +33,7 @@ export const THEMES: Theme[] = [
         id: 'default',
         name: 'Classic',
         unlockCount: 0,
+        buttonColor: '#ffffff',
         colors: {
             bg: '#ffffff',
             gridLines: 'rgba(0,0,0,0.05)',
@@ -54,6 +56,7 @@ export const THEMES: Theme[] = [
         id: 'dark',
         name: 'Midnight',
         unlockCount: 10,
+        buttonColor: '#1f2937',
         colors: {
             bg: '#1f2937',
             gridLines: 'rgba(255,255,255,0.1)',
@@ -76,6 +79,7 @@ export const THEMES: Theme[] = [
         id: 'blueprint',
         name: 'Blueprint',
         unlockCount: 20,
+        buttonColor: '#3555a1',
         colors: {
             bg: '#3555a1',
             gridLines: 'rgba(255,255,255,0.2)',
@@ -92,6 +96,52 @@ export const THEMES: Theme[] = [
             selectionBg: 'rgba(255,255,255,0.1)',
             selectionBorder: '#ffffff',
             selectionShadow: 'rgba(255, 255, 255, 0.5)'
+        }
+    },
+    {
+        id: 'retro',
+        name: 'Terminal',
+        unlockCount: 60,
+        buttonColor: '#00ff41',
+        colors: {
+            bg: '#0c0c0c',
+            gridLines: 'rgba(0, 255, 65, 0.1)',
+            blackSquare: '#00ff41',
+            text: '#00ff41',
+            confirmedBg: '#0c0c0c',
+            confirmedText: '#00ff41',
+            confirmedBorder: '#003b00',
+            startWordBg: '#001a00',
+            startWordBorder: '#008f11',
+            pendingBg: '#002200',
+            pendingText: '#ccffcc',
+            pendingBorder: '#00ff41',
+            selectionBg: 'rgba(0, 255, 65, 0.1)',
+            selectionBorder: '#00ff41',
+            selectionShadow: 'rgba(0, 255, 65, 0.5)'
+        }
+    },
+    {
+        id: 'coffee',
+        name: 'Latte',
+        unlockCount: 100,
+        buttonColor: '#f5ebe0',
+        colors: {
+            bg: '#f5ebe0',
+            gridLines: 'rgba(214, 204, 194, 0.5)',
+            blackSquare: '#4a3b32',
+            text: '#3e2723',
+            confirmedBg: '#f5ebe0',
+            confirmedText: '#3e2723',
+            confirmedBorder: '#d6ccc2',
+            startWordBg: '#e6ccb2',
+            startWordBorder: '#d5bdaf',
+            pendingBg: '#e3d5ca',
+            pendingText: '#3e2723',
+            pendingBorder: '#b08968',
+            selectionBg: 'rgba(213, 189, 175, 0.4)',
+            selectionBorder: '#7f5539',
+            selectionShadow: 'rgba(127, 85, 57, 0.3)'
         }
     }
 ];

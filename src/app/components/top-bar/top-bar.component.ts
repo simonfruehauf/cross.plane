@@ -181,7 +181,7 @@ import { GridStoreService } from '../../../services/grid-store.service';
             class="w-8 h-8 rounded-full border transition-all relative flex items-center justify-center group"
             [class.ring-2]="activeTheme.id === t.id" [class.ring-offset-1]="activeTheme.id === t.id"
             [class.ring-blue-500]="activeTheme.id === t.id" [class.opacity-50]="wordsPlacedCount < t.unlockCount"
-            [style.background-color]="t.colors.bg" [style.border-color]="t.colors.confirmedBorder"
+            [style.background-color]="t.buttonColor" [style.border-color]="t.colors.confirmedBorder"
             [title]="wordsPlacedCount < t.unlockCount ? 'Unlock at ' + t.unlockCount + ' words' : t.name">
   
             <svg *ngIf="wordsPlacedCount < t.unlockCount" class="w-4 h-4 text-gray-400" fill="none"

@@ -1,8 +1,20 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /{document=**} {
+    
+    // User Profiles: Private, Owner Only
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Shared Grid: Publicly accessible for the collaborative crossword
+    match /grids/shared-grid {
       allow read, write: if true;
+    }
+
+    // Default: Deny all other access
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }

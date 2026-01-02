@@ -28,6 +28,12 @@ export class GridStoreService {
   readonly lastPlacedTime = signal<number>(0);
 
   constructor() {
+    // Initialize lastPlacedTime from cookie
+    const savedTime = this.getCookie('cross_plane_last_placed');
+    if (savedTime) {
+      this.lastPlacedTime.set(parseInt(savedTime, 10));
+    }
+
     // Load saved data from Firebase on startup
     this.loadFromFirebase();
 
@@ -56,6 +62,35 @@ export class GridStoreService {
         this.saveToFirebase();
       }, 1000);
     });
+
+    // Persist lastPlacedTime to cookie
+    effect(() => {
+      const time = this.lastPlacedTime();
+      if (time > 0) {
+        this.setCookie('cross_plane_last_placed', time.toString(), 365);
+      }
+    });
+  }
+
+  private setCookie(name: string, value: string, days: number) {
+    let expires = "";
+    if (days) {
+      const date = new Date();
+      date.setTime(date.getTime() + (days * 24 * 60 * 60 * 1000));
+      expires = "; expires=" + date.toUTCString();
+    }
+    document.cookie = name + "=" + (value || "") + expires + "; path=/";
+  }
+
+  private getCookie(name: string): string | null {
+    const nameEQ = name + "=";
+    const ca = document.cookie.split(';');
+    for (let i = 0; i < ca.length; i++) {
+      let c = ca[i];
+      while (c.charAt(0) === ' ') c = c.substring(1, c.length);
+      if (c.indexOf(nameEQ) === 0) return c.substring(nameEQ.length, c.length);
+    }
+    return null;
   }
 
   private handleRemoteUpdate(cells: Cell[]): void {

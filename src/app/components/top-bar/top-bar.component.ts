@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { Theme, Font } from '../../../app.component';
 import { FirebaseService } from '../../../services/firebase.service';
 import { GridStoreService } from '../../../services/grid-store.service';
+import { DictionaryService } from '../../../services/dict.service';
 
 @Component({
   selector: 'app-top-bar',
@@ -260,6 +261,7 @@ export class TopBarComponent implements AfterViewInit, OnDestroy {
   private ngZone = inject(NgZone);
   private firebaseService = inject(FirebaseService);
   private gridStore = inject(GridStoreService);
+  private dictService = inject(DictionaryService);
 
   // Auth Signal
   currentUser = this.firebaseService.currentUser;
@@ -336,11 +338,20 @@ export class TopBarComponent implements AfterViewInit, OnDestroy {
     this.ngZone.runOutsideAngular(() => {
       const loop = () => {
         const now = Date.now();
-        const elapsed = now - this.lastPlacedTime;
+
+        // Use the LATER of normal cooldown and profanity cooldown
+        const normalCooldownEnd = this.lastPlacedTime + this.cooldownMs;
+        const profanityCooldownEnd = this.dictService.profanityCooldownEnd();
+        const effectiveCooldownEnd = Math.max(normalCooldownEnd, profanityCooldownEnd);
+
+        // Calculate which cooldown duration to use for progress calculation
+        const effectiveCooldownMs = profanityCooldownEnd > normalCooldownEnd ? 30000 : this.cooldownMs;
+        const effectiveStartTime = effectiveCooldownEnd - effectiveCooldownMs;
+        const elapsed = now - effectiveStartTime;
 
         let progress = 1.0;
-        if (elapsed < this.cooldownMs) {
-          progress = elapsed / this.cooldownMs;
+        if (now < effectiveCooldownEnd) {
+          progress = elapsed / effectiveCooldownMs;
         }
 
         if (this.progressPath?.nativeElement) {

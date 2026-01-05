@@ -1,17 +1,59 @@
-import { Injectable } from '@angular/core';
+import { inject, Injectable, signal } from '@angular/core';
+import { FirebaseService } from './firebase.service';
+
+// Cooldown duration for unlogged users who submit profanity (30 seconds)
+const PROFANITY_COOLDOWN_MS = 30000;
 
 @Injectable({
   providedIn: 'root'
 })
 export class DictionaryService {
+  private firebaseService = inject(FirebaseService);
+
+  // Track profanity cooldown for unlogged users
+  private lastProfanityTime = 0;
+
+  /** Exposed signal for UI to show remaining cooldown time */
+  readonly profanityCooldownEnd = signal<number>(0);
 
   constructor() { }
 
+  /** Check if user is currently in profanity cooldown */
+  isInProfanityCooldown(): boolean {
+    const user = this.firebaseService.currentUser();
+    if (user) {
+      // Logged-in users don't have profanity cooldown
+      return false;
+    }
+    return Date.now() < this.lastProfanityTime + PROFANITY_COOLDOWN_MS;
+  }
+
+  /** Get remaining cooldown time in milliseconds */
+  getProfanityCooldownRemaining(): number {
+    if (!this.isInProfanityCooldown()) return 0;
+    return (this.lastProfanityTime + PROFANITY_COOLDOWN_MS) - Date.now();
+  }
+
   async validateWord(word: string): Promise<{ valid: boolean; definition: string; reason?: string }> {
     try {
+      // Step 0: Check if unlogged user is in profanity cooldown
+      if (this.isInProfanityCooldown()) {
+        const remaining = Math.ceil(this.getProfanityCooldownRemaining() / 1000);
+        return { valid: false, definition: '', reason: `Please wait ${remaining}s before trying again` };
+      }
+
       // Step 1: Check for profanity FIRST (silently reject bad words)
       const isProfane = await this.checkProfanity(word);
       if (isProfane) {
+        const user = this.firebaseService.currentUser();
+        if (user) {
+          // Track profanity attempt in Firebase for logged-in users
+          this.firebaseService.incrementProfanityCount();
+        } else {
+          // Apply cooldown for unlogged users
+          this.lastProfanityTime = Date.now();
+          this.profanityCooldownEnd.set(this.lastProfanityTime + PROFANITY_COOLDOWN_MS);
+        }
         // Return generic "not found" message so player doesn't know why it was blocked
         return { valid: false, definition: '', reason: `"${word.toUpperCase()}" not found in dictionary` };
       }

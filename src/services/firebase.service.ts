@@ -7,7 +7,8 @@ import {
     setDoc,
     getDoc,
     onSnapshot,
-    Unsubscribe
+    Unsubscribe,
+    increment
 } from 'firebase/firestore';
 import {
     getAuth,
@@ -132,5 +133,28 @@ export class FirebaseService {
         const docRef = doc(this.db, 'users', userId);
         const snapshot = await getDoc(docRef);
         return snapshot.exists() ? snapshot.data() : null;
+    }
+
+    /**
+     * Increments the profanity attempt counter for a user.
+     * Called silently when a user tries to submit a profane word.
+     */
+    async incrementProfanityCount(): Promise<void> {
+        const user = this.currentUser();
+        if (!user) {
+            // Not logged in, don't track
+            return;
+        }
+
+        try {
+            const docRef = doc(this.db, 'users', user.uid);
+            await setDoc(docRef, {
+                profanityAttempts: increment(1),
+                lastProfanityAttempt: new Date().toISOString()
+            }, { merge: true });
+        } catch (error) {
+            // Silently fail - don't disrupt user experience
+            console.warn('Failed to track profanity attempt:', error);
+        }
     }
 }

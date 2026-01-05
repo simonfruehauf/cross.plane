@@ -21,7 +21,6 @@ export class AppComponent implements AfterViewInit, OnInit {
     // Services
     private renderer = inject(CanvasRendererService);
     private inputManager = inject(InputManagerService);
-
     // Core State
     activeTheme = signal<Theme>(THEMES[0]);
     themes = THEMES;
@@ -176,18 +175,45 @@ export class AppComponent implements AfterViewInit, OnInit {
     }
 
     processCharInput(char: string) {
-        const sel = this.grid.selectedCell();
+        let sel = this.grid.selectedCell();
         if (!sel || this.grid.isBlackSquare(sel.x, sel.y)) return;
 
-        const existing = this.grid.getCell(sel.x, sel.y);
-        if (existing && existing.confirmed) {
-            if (existing.char === char) {
-                this.moveCursor(1);
+        const dx = this.grid.inputDirection() === 'across' ? 1 : 0;
+        const dy = this.grid.inputDirection() === 'down' ? 1 : 0;
+
+        // Skip over confirmed cells
+        while (sel && !this.grid.isBlackSquare(sel.x, sel.y)) {
+            const existing = this.grid.getCell(sel.x, sel.y);
+            if (existing && existing.confirmed) {
+                if (existing.char === char) {
+                    // Matches confirmed letter, move to next cell
+                    const nextX = sel.x + dx;
+                    const nextY = sel.y + dy;
+                    if (!this.grid.isBlackSquare(nextX, nextY)) {
+                        this.grid.selectedCell.set({ x: nextX, y: nextY });
+                        sel = { x: nextX, y: nextY };
+                    }
+                    this.focusInput();
+                    return;
+                } else {
+                    // Doesn't match, skip to next cell and try to place there
+                    const nextX = sel.x + dx;
+                    const nextY = sel.y + dy;
+                    if (this.grid.isBlackSquare(nextX, nextY)) {
+                        // Can't skip further, nowhere to place
+                        return;
+                    }
+                    sel = { x: nextX, y: nextY };
+                    this.grid.selectedCell.set(sel);
+                    // Loop will check the next cell
+                }
             } else {
-                this.showError("Cannot change existing letters!");
+                // Cell is empty or has pending char, place the letter here
+                break;
             }
-            return;
         }
+
+        if (!sel || this.grid.isBlackSquare(sel.x, sel.y)) return;
 
         this.addPendingChar(sel.x, sel.y, char);
         this.moveCursor(1);

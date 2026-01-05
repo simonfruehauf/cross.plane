@@ -4,6 +4,80 @@ import { FirebaseService } from './firebase.service';
 // Cooldown duration for unlogged users who submit profanity (30 seconds)
 const PROFANITY_COOLDOWN_MS = 30000;
 
+// Additional words to block that may not be caught by the external profanity API
+// Includes anatomical terms, slurs, drug references, and other inappropriate words
+const LOCAL_BLOCKLIST = new Set([
+  // Anatomical/crude terms
+  'penis',
+  'vagina',
+  'anus',
+  'rectum',
+  'scrotum',
+  'testicle',
+  'testicles',
+  'clitoris',
+  'labia',
+  'foreskin',
+  'genitals',
+  'genital',
+  'phallus',
+  'urethra',
+  'pubic',
+  'groin',
+
+  // Bodily functions/fluids
+  'feces',
+  'faeces',
+  'urine',
+  'semen',
+  'sperm',
+  'enema',
+
+  // Drug references
+  'cocaine',
+  'heroin',
+  'meth',
+  'crack',
+  'ecstasy',
+  'lsd',
+  'ketamine',
+  'opium',
+  'fentanyl',
+  'morphine',
+
+  // Slurs and offensive terms (keeping list minimal but covering major ones)
+  'nazi',
+  'nazis',
+  'hitler',
+  'holocaust',
+  'genocide',
+  'kkk',
+  'jihad',
+  'terrorist',
+  'terrorists',
+
+  // Violence-related
+  'murder',
+  'rape',
+  'rapist',
+  'molest',
+  'pedophile',
+  'incest',
+  'suicide',
+  'homicide',
+
+  // Other inappropriate
+  'porn',
+  'porno',
+  'hentai',
+  'fetish',
+  'bondage',
+  'orgy',
+  'brothel',
+  'prostitute',
+  'escort',
+]);
+
 @Injectable({
   providedIn: 'root'
 })
@@ -95,13 +169,20 @@ export class DictionaryService {
   }
 
   /**
-   * Checks if a word contains profanity using the PurgoMalum API.
+   * Checks if a word contains profanity using the local blocklist and PurgoMalum API.
    * This is done silently - the player won't know their word was blocked for profanity.
    */
   private async checkProfanity(word: string): Promise<boolean> {
+    const lowerWord = word.toLowerCase();
+
+    // Check local blocklist first
+    if (LOCAL_BLOCKLIST.has(lowerWord)) {
+      return true;
+    }
+
     try {
       const response = await fetch(
-        `https://www.purgomalum.com/service/containsprofanity?text=${encodeURIComponent(word.toLowerCase())}`
+        `https://www.purgomalum.com/service/containsprofanity?text=${encodeURIComponent(lowerWord)}`
       );
 
       if (!response.ok) {

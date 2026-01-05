@@ -1,6 +1,7 @@
 import { Component, EventEmitter, Input, Output, signal, ElementRef, ViewChild, NgZone, AfterViewInit, OnDestroy, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { Theme, Font } from '../../../app.component';
+import { Theme } from '../../models/theme.model';
+import { Font } from '../../models/font.model';
 import { FirebaseService } from '../../../services/firebase.service';
 import { GridStoreService } from '../../../services/grid-store.service';
 import { DictionaryService } from '../../../services/dict.service';

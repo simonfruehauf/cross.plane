@@ -175,6 +175,7 @@ export class AppComponent implements AfterViewInit, OnInit {
     }
 
     processCharInput(char: string) {
+        this.inputManager.hasInteracted.set(true);
         let sel = this.grid.selectedCell();
         if (!sel || this.grid.isBlackSquare(sel.x, sel.y)) return;
 

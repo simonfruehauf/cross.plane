@@ -1,10 +1,11 @@
-import { Component, EventEmitter, Input, Output, signal, ElementRef, ViewChild, NgZone, AfterViewInit, OnDestroy, inject } from '@angular/core';
+import { Component, EventEmitter, Input, Output, signal, ElementRef, ViewChild, NgZone, AfterViewInit, OnDestroy, inject, computed, effect } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Theme } from '../../models/theme.model';
 import { Font } from '../../models/font.model';
 import { FirebaseService } from '../../../services/firebase.service';
 import { GridStoreService } from '../../../services/grid-store.service';
 import { DictionaryService } from '../../../services/dict.service';
+import { InputManagerService } from '../../services/input-manager.service';
 
 @Component({
   selector: 'app-top-bar',
@@ -13,8 +14,12 @@ import { DictionaryService } from '../../../services/dict.service';
   template: `
     <!-- Info & Status (Top Left) -->
     <div class="absolute top-0 left-0 right-0 p-4 pointer-events-none z-50 flex justify-center md:justify-start">
-      <div class="bg-white/95 backdrop-blur shadow-lg border border-gray-200 px-4 py-3 rounded-xl pointer-events-auto max-w-sm w-full md:w-auto text-center md:text-left">
-        <div class="flex items-center gap-3 mb-1">
+      <div 
+        (mouseenter)="isHovered.set(true)" 
+        (mouseleave)="isHovered.set(false)"
+        class="bg-white/95 backdrop-blur shadow-lg border border-gray-200 px-4 py-3 rounded-xl pointer-events-auto max-w-sm w-full md:w-auto text-center md:text-left transition-all duration-300 ease-in-out"
+        [class.py-2]="isCollapsed()">
+        <div class="flex items-center gap-3" [class.mb-1]="!isCollapsed()">
           <!-- Cooldown Indicator -->
           <div class="relative w-6 h-6 flex-shrink-0">
             <svg class="transform -rotate-90 w-full h-full" viewBox="0 0 36 36">
@@ -32,37 +37,54 @@ import { DictionaryService } from '../../../services/dict.service';
             </div>
           </div>
           <h1 class="text-xl font-black tracking-tighter">Cross.plane</h1>
-        </div>
-        <p class="hidden md:block text-xs text-gray-500 mb-2 leading-relaxed">
-          Infinite, procedural, collaborative crossword. <br />
-          Click to select. Space to rotate. Type to type.
-        </p>
-  
-        <!-- Stats -->
-        <div class="flex items-center justify-between mb-3 pt-2 border-t border-gray-100">
-          <div class="text-xs font-bold text-gray-500 uppercase tracking-wide">
-            Words placed: <span class="text-black text-sm">{{ wordsPlacedCount }}</span>
+          
+          <!-- Collapsed Stats -->
+          <div *ngIf="isCollapsed()" class="flex items-center gap-2 ml-2 animate-in fade-in slide-in-from-left-2">
+             <div class="h-4 w-px bg-gray-300"></div>
+             <div class="text-xs font-bold text-gray-500 uppercase tracking-wide whitespace-nowrap">
+               Words placed: <span class="text-black ml-1">{{ wordsPlacedCount }}</span>
+             </div>
           </div>
         </div>
-  
-        <!-- Status Box -->
-        <div class="min-h-[24px] flex flex-col justify-center items-center md:items-start">
-          <div *ngIf="isValidating" class="flex items-center space-x-2 text-blue-600 animate-pulse">
-            <svg class="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
-              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-              <path class="opacity-75" fill="currentColor"
-                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z">
-              </path>
-            </svg>
-            <span class="text-sm font-semibold">Validating...</span>
-          </div>
-          <div *ngIf="!isValidating && validationMessage" 
-               class="text-sm font-medium whitespace-pre-wrap" 
-               [class.text-red-500]="isError"
-               [class.text-green-600]="!isError">
-            {{ validationMessage }}
-          </div>
+
+        <div *ngIf="!isCollapsed()" class="animate-in fade-in slide-in-from-top-1">
+            <p class="hidden md:block text-xs text-gray-500 mb-2 leading-relaxed">
+            Infinite, procedural, collaborative crossword. <br />
+            Click to select. Space to rotate. Type to type.
+            </p>
+    
+            <!-- Stats -->
+            <div class="flex items-center justify-between mb-3 pt-2 border-t border-gray-100">
+            <div class="text-xs font-bold text-gray-500 uppercase tracking-wide">
+                Words placed: <span class="text-black text-sm">{{ wordsPlacedCount }}</span>
+            </div>
+            </div>
         </div>
+
+        <!-- Status Box (Always visible if message exists or expanded) -->
+        <div *ngIf="!isCollapsed() || isValidating || validationMessage" 
+             class="flex flex-col justify-center items-center md:items-start transition-all"
+             [class.min-h-[24px]]="!isCollapsed()"
+             [class.mt-2]="!isCollapsed() || (isCollapsed() && (isValidating || validationMessage))"
+             [class.pt-2]="isCollapsed() && (isValidating || validationMessage)"
+             [class.border-t]="isCollapsed() && (isValidating || validationMessage)"
+             [class.border-gray-100]="isCollapsed()">
+                <div *ngIf="isValidating" class="flex items-center space-x-2 text-blue-600 animate-pulse">
+                <svg class="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z">
+                    </path>
+                </svg>
+                <span class="text-sm font-semibold">Validating...</span>
+                </div>
+                <div *ngIf="!isValidating && validationMessage" 
+                    class="text-sm font-medium whitespace-pre-wrap" 
+                    [class.text-red-500]="isError"
+                    [class.text-green-600]="!isError">
+                {{ validationMessage }}
+                </div>
+            </div>
       </div>
     </div>
   
@@ -263,6 +285,22 @@ export class TopBarComponent implements AfterViewInit, OnDestroy {
   private firebaseService = inject(FirebaseService);
   private gridStore = inject(GridStoreService);
   private dictService = inject(DictionaryService);
+  private inputManager = inject(InputManagerService);
+
+  // Interaction & Collapse State
+  isHovered = signal(false);
+  shouldCollapse = signal(false);
+  isCollapsed = computed(() => this.shouldCollapse() && !this.isHovered());
+
+  constructor() {
+    effect(() => {
+      if (this.inputManager.hasInteracted()) {
+        setTimeout(() => {
+          this.shouldCollapse.set(true);
+        }, 5000);
+      }
+    });
+  }
 
   // Auth Signal
   currentUser = this.firebaseService.currentUser;

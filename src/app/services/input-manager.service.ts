@@ -22,6 +22,9 @@ export class InputManagerService {
     initialPinchDist = 0;
     startZoom = 1;
 
+    // Interaction State
+    readonly hasInteracted = signal(false);
+
     constructor(private grid: GridStoreService) { }
 
     // --- Zoom Logic ---
@@ -96,6 +99,7 @@ export class InputManagerService {
 
     public handlePan(e: MouseEvent) {
         if (!this.isPanning) return;
+        this.hasInteracted.set(true);
         const dx = e.clientX - this.startX;
         const dy = e.clientY - this.startY;
         this.grid.viewportOffset.set({
@@ -120,6 +124,7 @@ export class InputManagerService {
         }
 
         if (this.isPanning && e.touches.length === 1) {
+            this.hasInteracted.set(true);
             const dx = e.touches[0].clientX - this.startX;
             const dy = e.touches[0].clientY - this.startY;
             this.grid.viewportOffset.set({
